@@ -16,11 +16,11 @@ import { shuffle } from 'lodash';
 import mouseTrap from 'react-mousetrap';
 import randomColor from 'randomcolor';
 import ReactFitText from 'react-fittext';
-import { SketchPicker } from 'react-color';
+import { PhotoshopPicker } from 'react-color';
 import fs from 'fs';
 import uuidv4 from 'uuid/v4';
 
-import { alterColor, rgbToHex } from '../../actions/color';
+import { alterColor } from '../../actions/color';
 
 const PREFIX_ACTIVE = 'active';
 const PREFIX_EDIT = 'edit';
@@ -121,11 +121,6 @@ class TeamGenerator extends Component {
     this.addOrEditPlayer = this.addOrEditPlayer.bind(this);
     this.toggleModal = this.toggleModal.bind(this);
 
-    this.playerNameRef = React.createRef();
-    this.playerBgRef = React.createRef();
-    this.playerColorSwatchRef = React.createRef();
-    this.benchedRef = React.createRef();
-
     let rawNames = JSON.parse(fs.readFileSync('names.json', 'utf8')).names;
 
     rawNames = shuffleNames(rawNames);
@@ -134,7 +129,7 @@ class TeamGenerator extends Component {
       teamSize: 2,
       modal: false,
       history: [],
-      editIndex: -1,
+      modalBo: new Player(null, '', randomColor({ luminosity: 'dark' }), false),
       displayColorPicker: false,
       names: rawNames.map(
         item => new Player(item.id, item.name, item.color, item.active)
@@ -200,8 +195,8 @@ class TeamGenerator extends Component {
     const { state } = this;
     e.stopPropagation();
     const id = e.target.id.substring(PREFIX_EDIT.length);
-    const idx = state.names.findIndex(item => item.id === id);
-    this.setState({ editIndex: idx }, this.toggleModal);
+    state.modalBo = Object.assign({}, state.names.find(item => item.id === id));
+    this.setState(state, this.toggleModal);
   };
 
   onNameTagDelete = e => {
@@ -209,8 +204,6 @@ class TeamGenerator extends Component {
     e.stopPropagation();
     const id = e.target.id.substring(PREFIX_DELETE.length);
     state.names = state.names.filter(item => item.id !== id);
-    // const idx = state.names.findIndex(item => item.id === id);
-    // state.names.splice(idx, 1)[0];
     saveState(state.names);
     this.setState(state);
   };
@@ -239,19 +232,18 @@ class TeamGenerator extends Component {
 
   addOrEditPlayer = () => {
     const { state } = this;
-    const newName = this.playerNameRef.current.value;
+    const newName = state.modalBo.name;
 
     if (!newName || newName.length === 0) {
       return;
     }
 
-    const newColor = rgbToHex(
-      this.playerColorSwatchRef.current.style.backgroundColor
-    );
+    const newColor = state.modalBo.color;
 
-    if (state.editIndex >= 0) {
-      state.names[state.editIndex].name = newName;
-      state.names[state.editIndex].color = newColor;
+    if (state.modalBo.id) {
+      const p = state.names.find(item => item.id === state.modalBo.id);
+      p.name = newName;
+      p.color = newColor;
     } else {
       state.names = state.names.concat(
         new Player(uuidv4(), newName, newColor, true)
@@ -276,39 +268,25 @@ class TeamGenerator extends Component {
   }
 
   handleClick = () => {
-    const { displayColorPicker } = this.state;
-    this.setState({ displayColorPicker: !displayColorPicker });
-  };
-
-  handleClose = () => {
-    this.setState({ displayColorPicker: false });
+    const { displayColorPicker, modalBo } = this.state;
+    modalBo.oldColor = modalBo.color;
+    this.setState({
+      displayColorPicker: !displayColorPicker,
+      modalBo
+    });
   };
 
   render() {
-    const {
-      teamSize,
-      names,
-      modal,
-      displayColorPicker,
-      editIndex
-    } = this.state;
+    const { teamSize, names, modal, displayColorPicker, modalBo } = this.state;
     const popover = {
       position: 'absolute',
       zIndex: '2'
-    };
-    const cover = {
-      position: 'fixed',
-      top: '0px',
-      right: '0px',
-      bottom: '0px',
-      left: '0px'
     };
     return (
       <React.Fragment>
         <nav
           className="navbar navbar-expand navbar-dark d-none d-lg-flex"
           id="sideNav"
-          ref={this.benchedRef}
         >
           <h1 className="title">Benched</h1>
           {names.filter(item => !item.active).map(item => (
@@ -381,7 +359,14 @@ class TeamGenerator extends Component {
                 </Button>
                 <Button
                   color="primary"
-                  onClick={this.toggleModal}
+                  onClick={() => {
+                    const { state } = this;
+                    state.modalBo.id = null;
+                    state.modalBo.name = '';
+                    state.modalBo.color = randomColor({ luminosity: 'dark' });
+                    state.modalBo.active = true;
+                    this.setState(state, this.toggleModal);
+                  }}
                   className="mx-2"
                 >
                   Add Player
@@ -402,34 +387,13 @@ class TeamGenerator extends Component {
           centered
           isOpen={modal}
           toggle={this.toggleModal}
-          onOpened={() => {
-            if (editIndex >= 0) {
-              const player = names[editIndex];
-              this.playerNameRef.current.value = player.name;
-              this.playerBgRef.current.style.backgroundImage = createGradient(
-                player.color
-              );
-              this.playerColorSwatchRef.current.style.backgroundColor =
-                player.color;
-            } else {
-              const newColor = randomColor({ luminosity: 'dark' });
-              this.playerBgRef.current.style.backgroundImage = createGradient(
-                newColor
-              );
-              this.playerColorSwatchRef.current.style.backgroundColor = newColor;
-            }
-            this.playerNameRef.current.focus();
-          }}
-          onClosed={() => {
-            this.setState({ editIndex: -1 });
-          }}
         >
           <div
             id="playerModalHeader"
             className="modal-header subtitle"
-            ref={this.playerBgRef}
+            style={{ backgroundImage: createGradient(modalBo.color) }}
           >
-            {editIndex >= 0 ? 'Edit Player' : 'Add Player'}
+            {modalBo.id ? 'Edit Player' : 'Add Player'}
           </div>
           <ModalBody>
             <Form>
@@ -442,7 +406,12 @@ class TeamGenerator extends Component {
                     type="text"
                     className="form-control"
                     placeholder="Enter name"
-                    ref={this.playerNameRef}
+                    value={modalBo.name}
+                    onChange={e => {
+                      const { state } = this;
+                      state.modalBo.name = e.target.value;
+                      this.setState(state);
+                    }}
                     onKeyUp={e => {
                       if (e.key === 'Enter') {
                         this.addOrEditPlayer();
@@ -459,8 +428,6 @@ class TeamGenerator extends Component {
                 </Label>
                 <Col sm={10}>
                   <div
-                    role="button"
-                    tabIndex="0"
                     className="align-middle"
                     style={{
                       display: 'inline-block',
@@ -468,15 +435,12 @@ class TeamGenerator extends Component {
                       height: '20px',
                       margin: '0px 10px 10px 0px'
                     }}
-                    onClick={this.handleClick}
-                    onKeyPress={() => {
-                      console.log('TODO');
-                    }}
                   >
                     <div
-                      ref={this.playerColorSwatchRef}
+                      role="button"
+                      tabIndex="0"
                       style={{
-                        background: 'rgb(208, 2, 27)',
+                        backgroundColor: modalBo.color,
                         height: '100%',
                         width: '100%',
                         cursor: 'pointer',
@@ -486,27 +450,31 @@ class TeamGenerator extends Component {
                         borderRadius: '3px',
                         boxShadow: 'rgba(0, 0, 0, 0.15) 0px 0px 0px 1px inset'
                       }}
+                      onClick={this.handleClick}
+                      onKeyPress={() => {
+                        console.log('TODO');
+                      }}
                     />
                   </div>
                   {displayColorPicker ? (
                     <div style={popover}>
-                      <div
-                        role="button"
-                        tabIndex="0"
-                        style={cover}
-                        onClick={this.handleClose}
-                        onKeyPress={() => {
-                          console.log('TODO');
-                        }}
-                      />
-                      <SketchPicker
-                        // TODO: Add color attribute
+                      <PhotoshopPicker
+                        color={modalBo.color}
                         onChangeComplete={color => {
-                          this.playerBgRef.current.style.backgroundImage = createGradient(
-                            color.hex
-                          );
-                          this.playerColorSwatchRef.current.style.backgroundColor =
-                            color.hex;
+                          const { state } = this;
+                          state.modalBo.color = color.hex;
+                          this.setState(state);
+                        }}
+                        onAccept={() => {
+                          const { state } = this;
+                          state.displayColorPicker = false;
+                          this.setState(state);
+                        }}
+                        onCancel={() => {
+                          const { state } = this;
+                          state.modalBo.color = state.modalBo.oldColor;
+                          state.displayColorPicker = false;
+                          this.setState(state);
                         }}
                       />
                     </div>
@@ -515,11 +483,10 @@ class TeamGenerator extends Component {
                     color="secondary"
                     size="sm"
                     onClick={() => {
+                      const { state } = this;
                       const newColor = randomColor({ luminosity: 'dark' });
-                      this.playerBgRef.current.style.backgroundImage = createGradient(
-                        newColor
-                      );
-                      this.playerColorSwatchRef.current.style.backgroundColor = newColor;
+                      state.modalBo.color = newColor;
+                      this.setState(state);
                     }}
                   >
                     Random
