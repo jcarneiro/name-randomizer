@@ -22,6 +22,7 @@ import uuidv4 from 'uuid/v4';
 
 import { alterColor } from '../../actions/color';
 
+const SAVE_FILE = 'players.json';
 const PREFIX_ACTIVE = 'active';
 const PREFIX_EDIT = 'edit';
 const PREFIX_DELETE = 'delete';
@@ -39,7 +40,7 @@ function shuffleNames(names) {
 function saveState(names) {
   const data = JSON.stringify({ names });
 
-  fs.writeFile('names.json', data, err => {
+  fs.writeFile(SAVE_FILE, data, err => {
     if (err) throw err;
   });
 }
@@ -121,7 +122,14 @@ class TeamGenerator extends Component {
     this.addOrEditPlayer = this.addOrEditPlayer.bind(this);
     this.toggleModal = this.toggleModal.bind(this);
 
-    let rawNames = JSON.parse(fs.readFileSync('names.json', 'utf8')).names;
+    this.playerNameRef = React.createRef();
+
+    let rawNames;
+    try {
+      rawNames = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8')).names;
+    } catch (err) {
+      rawNames = [];
+    }
 
     rawNames = shuffleNames(rawNames);
 
@@ -387,6 +395,7 @@ class TeamGenerator extends Component {
           centered
           isOpen={modal}
           toggle={this.toggleModal}
+          onOpened={() => this.playerNameRef.current.focus()}
         >
           <div
             id="playerModalHeader"
@@ -403,6 +412,7 @@ class TeamGenerator extends Component {
                 </Label>
                 <Col sm={10}>
                   <input
+                    ref={this.playerNameRef}
                     type="text"
                     className="form-control"
                     placeholder="Enter name"
